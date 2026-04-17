@@ -18,6 +18,12 @@ export default function HomePage() {
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [uploadMessage, setUploadMessage] = useState('No files uploaded yet.');
   const [isUploading, setIsUploading] = useState(false);
+  const [lastUploadedByType, setLastUploadedByType] = useState<Record<'functional' | 'technical' | 'api' | 'legacy', string>>({
+    functional: 'No file uploaded yet.',
+    technical: 'No file uploaded yet.',
+    api: 'No file uploaded yet.',
+    legacy: 'No file uploaded yet.',
+  });
 
   const loadDocuments = async () => {
     try {
@@ -67,13 +73,13 @@ export default function HomePage() {
       await loadDocuments();
       const uploadedNames = uploaded.map((doc) => doc.filename).join(', ');
       setUploadMessage(`Uploaded files: ${uploadedNames}`);
+      setLastUploadedByType((prev) => ({ ...prev, [type]: uploadedNames }));
       window.alert(`Upload successful. Uploaded ${uploaded.length} file(s).`);
     } catch {
       setUploadMessage('Upload failed. Please verify backend availability and file size limits.');
       window.alert('Upload failed. Please check backend logs and try again.');
     } finally {
       setIsUploading(false);
-      event.target.value = '';
     }
   };
 
@@ -164,18 +170,22 @@ export default function HomePage() {
             <label className="rounded-lg border p-2">
               Upload Functional Design
               <input className="mt-1 block w-full" type="file" multiple onChange={(event) => void uploadFiles('functional', event)} />
+              <span className="mt-1 block text-[11px]">Last uploaded: {lastUploadedByType.functional}</span>
             </label>
             <label className="rounded-lg border p-2">
               Upload Technical Design
               <input className="mt-1 block w-full" type="file" multiple onChange={(event) => void uploadFiles('technical', event)} />
+              <span className="mt-1 block text-[11px]">Last uploaded: {lastUploadedByType.technical}</span>
             </label>
             <label className="rounded-lg border p-2">
               Upload API Spec
               <input className="mt-1 block w-full" type="file" multiple onChange={(event) => void uploadFiles('api', event)} />
+              <span className="mt-1 block text-[11px]">Last uploaded: {lastUploadedByType.api}</span>
             </label>
             <label className="rounded-lg border p-2">
               Upload Optional Legacy Files
               <input className="mt-1 block w-full" type="file" multiple onChange={(event) => void uploadFiles('legacy', event)} />
+              <span className="mt-1 block text-[11px]">Last uploaded: {lastUploadedByType.legacy}</span>
             </label>
           </div>
           <p className="mb-4 text-xs text-slate-600">{isUploading ? 'Uploading documents...' : uploadMessage}</p>
