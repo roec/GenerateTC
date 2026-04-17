@@ -16,13 +16,18 @@ export default function HomePage() {
   const [mode, setMode] = useState<'standard' | 'strict' | 'risk-focused'>('strict');
   const [provider, setProvider] = useState({ activeProvider: 'deepseek', activeModel: 'deepseek-chat' });
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
-  const [uploadMessage, setUploadMessage] = useState('No documents uploaded yet.');
+  const [uploadMessage, setUploadMessage] = useState('No files uploaded yet.');
   const [isUploading, setIsUploading] = useState(false);
 
   const loadDocuments = async () => {
     try {
       const result = await apiGet<ProjectDocument[]>(`/documents/${projectId}`);
       setDocuments(result);
+      if (result.length > 0) {
+        setUploadMessage(`Uploaded files: ${result.map((doc) => doc.filename).join(', ')}`);
+      } else {
+        setUploadMessage('No files uploaded yet.');
+      }
     } catch {
       setUploadMessage('Unable to load documents from the server.');
     }
@@ -62,9 +67,12 @@ export default function HomePage() {
     try {
       const uploaded = await apiPostForm<ProjectDocument[]>(`/documents/${projectId}/upload`, formData);
       await loadDocuments();
-      setUploadMessage(`Uploaded ${uploaded.length} of ${selectedFiles.length} file(s).`);
+      const uploadedNames = uploaded.map((doc) => doc.filename).join(', ');
+      setUploadMessage(`Uploaded files: ${uploadedNames}`);
+      window.alert(`Upload successful. Uploaded ${uploaded.length} file(s).`);
     } catch {
       setUploadMessage('Upload failed. Please verify backend availability and file size limits.');
+      window.alert('Upload failed. Please check backend logs and try again.');
     } finally {
       setIsUploading(false);
       event.target.value = '';
@@ -115,7 +123,7 @@ export default function HomePage() {
             <h3 className="mb-3 text-lg font-semibold">Uploaded Documents</h3>
             <div className="space-y-2 text-sm">
               {documents.length === 0 ? (
-                <p className="text-slate-500">No documents uploaded yet.</p>
+                <p className="text-slate-500">No files uploaded yet.</p>
               ) : (
                 documents.map((doc) => (
                   <div key={doc.id} className="rounded-lg border p-3">
