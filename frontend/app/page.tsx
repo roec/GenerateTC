@@ -1,7 +1,7 @@
 'use client';
 
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, apiPostForm } from '@/lib/api';
 import { ProjectDocument, WorkflowJob } from '@/types';
 import { ProgressPanel } from '@/components/ProgressPanel';
 import { TestCaseTable } from '@/components/TestCaseTable';
@@ -53,25 +53,22 @@ export default function HomePage() {
     setIsUploading(true);
     setUploadMessage(`Uploading ${selectedFiles.length} file(s)...`);
 
-    let successCount = 0;
+    const formData = new FormData();
+    formData.append('type', type);
     for (const file of Array.from(selectedFiles)) {
-      try {
-        const content = await file.text();
-        await apiPost(`/documents/${projectId}`, {
-          type,
-          filename: file.name,
-          content,
-        });
-        successCount += 1;
-      } catch {
-        setUploadMessage(`Failed to upload ${file.name}. Only readable text-based files are supported in this demo uploader.`);
-      }
+      formData.append('files', file);
     }
 
-    await loadDocuments();
-    setUploadMessage(`Uploaded ${successCount} of ${selectedFiles.length} file(s).`);
-    setIsUploading(false);
-    event.target.value = '';
+    try {
+      const uploaded = await apiPostForm<ProjectDocument[]>(`/documents/${projectId}/upload`, formData);
+      await loadDocuments();
+      setUploadMessage(`Uploaded ${uploaded.length} of ${selectedFiles.length} file(s).`);
+    } catch {
+      setUploadMessage('Upload failed. Please verify backend availability and file size limits.');
+    } finally {
+      setIsUploading(false);
+      event.target.value = '';
+    }
   };
 
   const startGeneration = async () => {
