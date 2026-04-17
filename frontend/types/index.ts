@@ -7,6 +7,15 @@ export interface WorkflowStage {
   message: string;
 }
 
+export interface ProjectDocument {
+  id: string;
+  projectId: string;
+  type: 'functional' | 'technical' | 'api' | 'legacy';
+  filename: string;
+  content: string;
+  uploadedAt: string;
+}
+
 export interface TestCaseRecord {
   testCaseId: string;
   scenario: string;

@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost } from '@/lib/api';
-import { WorkflowJob } from '@/types';
+import { ProjectDocument, WorkflowJob } from '@/types';
 import { ProgressPanel } from '@/components/ProgressPanel';
 import { TestCaseTable } from '@/components/TestCaseTable';
 
@@ -15,9 +15,22 @@ export default function HomePage() {
   const [prompt, setPrompt] = useState('Generate S89 test cases in strict mode with Postman and AS400 DB validation');
   const [mode, setMode] = useState<'standard' | 'strict' | 'risk-focused'>('strict');
   const [provider, setProvider] = useState({ activeProvider: 'deepseek', activeModel: 'deepseek-chat' });
+  const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [uploadMessage, setUploadMessage] = useState('No documents uploaded yet.');
+  const [isUploading, setIsUploading] = useState(false);
+
+  const loadDocuments = async () => {
+    try {
+      const result = await apiGet<ProjectDocument[]>(`/documents/${projectId}`);
+      setDocuments(result);
+    } catch {
+      setUploadMessage('Unable to load documents from the server.');
+    }
+  };
 
   useEffect(() => {
     apiGet<{ activeProvider: string; activeModel: string }>('/settings').then(setProvider).catch(() => undefined);
+    void loadDocuments();
   }, []);
 
   useEffect(() => {
@@ -30,7 +43,43 @@ export default function HomePage() {
     return () => clearInterval(timer);
   }, [job]);
 
+  const uploadFiles = async (
+    type: 'functional' | 'technical' | 'api' | 'legacy',
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const selectedFiles = event.target.files;
+    if (!selectedFiles?.length) return;
+
+    setIsUploading(true);
+    setUploadMessage(`Uploading ${selectedFiles.length} file(s)...`);
+
+    let successCount = 0;
+    for (const file of Array.from(selectedFiles)) {
+      try {
+        const content = await file.text();
+        await apiPost(`/documents/${projectId}`, {
+          type,
+          filename: file.name,
+          content,
+        });
+        successCount += 1;
+      } catch {
+        setUploadMessage(`Failed to upload ${file.name}. Only readable text-based files are supported in this demo uploader.`);
+      }
+    }
+
+    await loadDocuments();
+    setUploadMessage(`Uploaded ${successCount} of ${selectedFiles.length} file(s).`);
+    setIsUploading(false);
+    event.target.value = '';
+  };
+
   const startGeneration = async () => {
+    if (documents.length === 0) {
+      setUploadMessage('Please upload at least one document before generating test cases.');
+      return;
+    }
+
     const created = await apiPost<WorkflowJob>(`/workflows/${projectId}`, { prompt, mode });
     setJob(created);
   };
@@ -39,17 +88,17 @@ export default function HomePage() {
   const stages = job?.stages ?? [];
 
   const tabBody = useMemo(() => {
-    if (!job) return <div className="rounded-2xl bg-white p-6 shadow-sm">No generation run yet.</div>;
+    if (!job && activeTab !== 'Documents') return <div className="rounded-2xl bg-white p-6 shadow-sm">No generation run yet.</div>;
 
     switch (activeTab) {
       case 'Test Cases':
-        return <TestCaseTable rows={job.testCases ?? []} />;
+        return <TestCaseTable rows={job?.testCases ?? []} />;
       case 'Postman':
-        return <pre className="rounded-2xl bg-white p-4 text-xs shadow-sm">{JSON.stringify(job.postmanCollection, null, 2)}</pre>;
+        return <pre className="rounded-2xl bg-white p-4 text-xs shadow-sm">{JSON.stringify(job?.postmanCollection ?? {}, null, 2)}</pre>;
       case 'SQL Validation':
         return (
           <div className="rounded-2xl bg-white p-4 shadow-sm">
-            {job.testCases.flatMap((tc) => tc.sqlValidation.map((sql) => (
+            {(job?.testCases ?? []).flatMap((tc) => tc.sqlValidation.map((sql) => (
               <div key={`${tc.testCaseId}-${sql.query}`} className="mb-3 rounded-lg border p-3">
                 <p className="font-semibold">{tc.testCaseId}</p>
                 <p><strong>Query:</strong> {sql.query}</p>
@@ -60,15 +109,32 @@ export default function HomePage() {
           </div>
         );
       case 'Coverage':
-        return <div className="rounded-2xl bg-white p-4 shadow-sm whitespace-pre-wrap">{job.coverage ?? 'Coverage summary pending.'}</div>;
+        return <div className="rounded-2xl bg-white p-4 shadow-sm whitespace-pre-wrap">{job?.coverage ?? 'Coverage summary pending.'}</div>;
       case 'Agent Logs':
-        return <div className="rounded-2xl bg-white p-4 shadow-sm">{job.logs.map((log) => <p key={log}>• {log}</p>)}</div>;
+        return <div className="rounded-2xl bg-white p-4 shadow-sm">{(job?.logs ?? []).map((log) => <p key={log}>• {log}</p>)}</div>;
       case 'Documents':
-        return <div className="rounded-2xl bg-white p-4 shadow-sm">Document metadata is available through the Documents API endpoint.</div>;
+        return (
+          <div className="rounded-2xl bg-white p-4 shadow-sm">
+            <h3 className="mb-3 text-lg font-semibold">Uploaded Documents</h3>
+            <div className="space-y-2 text-sm">
+              {documents.length === 0 ? (
+                <p className="text-slate-500">No documents uploaded yet.</p>
+              ) : (
+                documents.map((doc) => (
+                  <div key={doc.id} className="rounded-lg border p-3">
+                    <p className="font-medium">{doc.filename}</p>
+                    <p className="text-slate-600">Type: {doc.type}</p>
+                    <p className="text-slate-600">Uploaded: {new Date(doc.uploadedAt).toLocaleString()}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        );
       default:
         return null;
     }
-  }, [activeTab, job]);
+  }, [activeTab, documents, job]);
 
   return (
     <main className="min-h-screen p-6">
@@ -91,12 +157,25 @@ export default function HomePage() {
           <input value={projectId} readOnly className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
 
           <p className="mb-1 text-sm font-medium">Document Upload</p>
-          <div className="mb-4 grid gap-2 text-xs text-slate-600">
-            <div className="rounded-lg border p-2">Upload Functional Design</div>
-            <div className="rounded-lg border p-2">Upload Technical Design</div>
-            <div className="rounded-lg border p-2">Upload API Spec</div>
-            <div className="rounded-lg border p-2">Upload Optional Legacy Files</div>
+          <div className="mb-2 grid gap-2 text-xs text-slate-600">
+            <label className="rounded-lg border p-2">
+              Upload Functional Design
+              <input className="mt-1 block w-full" type="file" multiple onChange={(event) => void uploadFiles('functional', event)} />
+            </label>
+            <label className="rounded-lg border p-2">
+              Upload Technical Design
+              <input className="mt-1 block w-full" type="file" multiple onChange={(event) => void uploadFiles('technical', event)} />
+            </label>
+            <label className="rounded-lg border p-2">
+              Upload API Spec
+              <input className="mt-1 block w-full" type="file" multiple onChange={(event) => void uploadFiles('api', event)} />
+            </label>
+            <label className="rounded-lg border p-2">
+              Upload Optional Legacy Files
+              <input className="mt-1 block w-full" type="file" multiple onChange={(event) => void uploadFiles('legacy', event)} />
+            </label>
           </div>
+          <p className="mb-4 text-xs text-slate-600">{isUploading ? 'Uploading documents...' : uploadMessage}</p>
 
           <label className="mb-2 block text-sm font-medium">Prompt</label>
           <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} className="mb-3 h-28 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
