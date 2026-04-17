@@ -25,8 +25,6 @@ export default function HomePage() {
       setDocuments(result);
       if (result.length > 0) {
         setUploadMessage(`Uploaded files: ${result.map((doc) => doc.filename).join(', ')}`);
-      } else {
-        setUploadMessage('No files uploaded yet.');
       }
     } catch {
       setUploadMessage('Unable to load documents from the server.');
