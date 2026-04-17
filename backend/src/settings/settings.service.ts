@@ -9,7 +9,17 @@ export class SettingsService {
 
   async getHealth() {
     const dbClient = new Client({ connectionString: this.configService.get<string>('DATABASE_URL') });
-    const redis = new Redis(this.configService.get<string>('REDIS_URL', 'redis://localhost:6379'));
+    const redis = new Redis(this.configService.get<string>('REDIS_URL', 'redis://localhost:6379'), {
+      lazyConnect: true,
+      enableReadyCheck: false,
+      maxRetriesPerRequest: 1,
+      retryStrategy: () => null,
+    });
+
+    redis.on('error', () => {
+      // Intentionally swallow Redis connection errors for health probe mode.
+      // Health status is returned via the `cache` field below.
+    });
 
     let database = 'down';
     let cache = 'down';
@@ -25,12 +35,14 @@ export class SettingsService {
     }
 
     try {
+      await redis.connect();
       const pong = await redis.ping();
       cache = pong === 'PONG' ? 'up' : 'down';
     } catch {
       cache = 'down';
     } finally {
       await redis.quit().catch(() => undefined);
+      redis.disconnect(false);
     }
 
     return {
